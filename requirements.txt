@@ -1,0 +1,28 @@
+easyocr==1.7.2
+filelock==3.18.0
+fsspec==2025.3.2
+imageio==2.37.0
+Jinja2==3.1.6
+lazy_loader==0.4
+MarkupSafe==3.0.2
+mpmath==1.3.0
+networkx==3.2.1
+ninja==1.11.1.4
+numpy==1.26.4
+opencv-python==4.9.0.80
+opencv-python-headless==4.11.0.86
+packaging==25.0
+pillow==11.2.1
+pyclipper==1.3.0.post6
+pycoral @ file:///home/placasPT/pycoral-2.0.0-cp39-cp39-linux_aarch64.whl#sha256=25be9c3b9865e3b2843cdf29e85332682a8b869450c414a31c7810e0b717c54e
+python-bidi==0.6.6
+PyYAML==6.0.2
+scikit-image==0.24.0
+scipy==1.13.1
+shapely==2.0.7
+sympy==1.14.0
+tflite-runtime @ file:///home/placasPT/placasPTpi/tflite_runtime-2.5.0.post1-cp39-cp39-linux_aarch64.whl#sha256=9839c3acb506b5003a9bd3860329a8ae20e675efbae14dbea02659b0054f42c6
+tifffile==2024.8.30
+torch==2.7.0
+torchvision==0.22.0
+typing_extensions==4.13.2
