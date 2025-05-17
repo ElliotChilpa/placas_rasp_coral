@@ -1,0 +1,6 @@
+[ WARN:0@32.927] global cap_ffmpeg_impl.hpp:453 _opencv_ffmpeg_interrupt_callback Stream timeout triggered after 30050.277317 ms
+[ WARN:0@32.927] global cap.cpp:204 open VIDEOIO(FFMPEG): backend is generally available but can't be used to capture by name
+Traceback (most recent call last):
+  File "/home/placasPT/placasPTpi/pruebas-YOLO/prueba_3.py", line 23, in <module>
+    raise RuntimeError("No se pudo abrir el stream RTSP")
+RuntimeError: No se pudo abrir el stream RTSP
