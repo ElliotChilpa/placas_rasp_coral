@@ -1,6 +1,9 @@
-[ WARN:0@32.927] global cap_ffmpeg_impl.hpp:453 _opencv_ffmpeg_interrupt_callback Stream timeout triggered after 30050.277317 ms
-[ WARN:0@32.927] global cap.cpp:204 open VIDEOIO(FFMPEG): backend is generally available but can't be used to capture by name
+Using CPU. Note: This module is much faster with a GPU.
+qt.qpa.plugin: Could not find the Qt platform plugin "wayland" in "/home/placasPT/placasPTpi/coral-env/lib/python3.9/site-packages/cv2/qt/plugins"
 Traceback (most recent call last):
-  File "/home/placasPT/placasPTpi/pruebas-YOLO/prueba_3.py", line 23, in <module>
-    raise RuntimeError("No se pudo abrir el stream RTSP")
-RuntimeError: No se pudo abrir el stream RTSP
+  File "/home/placasPT/placasPTpi/pruebas-YOLO/CAM_P.py", line 128, in <module>
+    proc = rectify_and_threshold(crop)
+  File "/home/placasPT/placasPTpi/pruebas-YOLO/CAM_P.py", line 43, in rectify_and_threshold
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+cv2.error: OpenCV(4.9.0) /io/opencv/modules/imgproc/src/color.cpp:196: error: (-215:Assertion failed) !_src.empty() in function 'cvtColor'
+

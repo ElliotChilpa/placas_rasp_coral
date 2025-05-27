@@ -11,7 +11,9 @@ os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|buffer_size;20
 RTSP_URL = 'rtsp://admin:Chaparrito10@192.168.0.3:554/h264Preview_01_sub'
 
 # Cargar modelo Coral
-MODEL = 'best_clean_edgetpu.tflite'
+MODEL = 'Prueba-int8_edgetpu.tflite'
+ # MODEL = 'best_clean_edgetpu.tflite'
+ 
 interpreter = make_interpreter(MODEL)
 interpreter.allocate_tensors()
 input_size = common.input_size(interpreter)  # Esperado: (320, 320)
