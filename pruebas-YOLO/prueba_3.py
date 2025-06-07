@@ -1,67 +1,169 @@
-import os, cv2, time, numpy as np
+#!/usr/bin/env python3
+# -- coding: utf-8 --
+
+import os
+import cv2
+import json
+import time
+import numpy as np
+from datetime import datetime
+from PIL import Image
+from collections import deque
+from imutils.perspective import four_point_transform
 from pycoral.utils.edgetpu import make_interpreter
 from pycoral.adapters import common
-from PIL import Image
+import easyocr
 
-# ── Configuración ──
+# ───────── Configuración ───────── #
 RTSP_URL = 'rtsp://admin:Chaparrito10@192.168.0.3:554/h264Preview_01_sub'
-MODEL    = 'best_clean_edgetpu.tflite'
-CONF_TH, NMS_TH = 0.25, 0.45
-PROCESS_N = 3                  # procesa 1 de cada N frames
+MODEL_PATH = 'best_clean_edgetpu.tflite'
+JSON_LOG = 'placas_detectadas.json'
+SCORE_TH = 0.25
+SKIP_EVERY_N_FRAMES = 3
+ALLOWLIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+DUPLICATE_SECONDS = 5
+MIN_W, MIN_H = 10, 10          # área mínima del ROI para OCR
 
-# ── Cargar modelo ──
-inter = make_interpreter(MODEL); inter.allocate_tensors()
-IMG_SZ = common.input_size(inter)          # (320, 320)
-o_det  = inter.get_output_details()[0]
-scale, zp = o_det['quantization']
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+    "rtsp_transport;tcp|buffer_size;2048000"
+)
 
+# ───────── Cargar modelo Edge-TPU ───────── #
+interpreter = make_interpreter(MODEL_PATH)
+interpreter.allocate_tensors()
+in_w, in_h = common.input_size(interpreter)
+out_info = interpreter.get_output_details()[0]
+out_scale, out_zp = out_info['quantization']
 
-cv2.namedWindow('YOLOv5 Coral', cv2.WINDOW_NORMAL)
-f_cnt, t0 = 0, time.time()
+# ───────── OCR ───────── #
+reader = easyocr.Reader(['en'], gpu=False)
 
-while True:
-    ok, frame = cap.read()
-    if not ok:
-        print('Frame vacío…'); time.sleep(1); continue
-    f_cnt += 1
+# ───────── Utilidades ───────── #
+def rectify_and_threshold(crop):
+    """Corrige perspectiva (si hay contorno rectangular) y umbraliza."""
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
 
-    if f_cnt % PROCESS_N:                 # saltar inferencia pero mostrar
-        cv2.imshow('YOLOv5 Coral', frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'): break
-        continue
+    cnts, _ = cv2.findContours(gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cnts:
+        c = max(cnts, key=cv2.contourArea)
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        if len(approx) == 4:
+            crop = four_point_transform(crop, approx.reshape(-1, 2))
 
-    # ── Inferencia ──
-    rgb = cv2.cvtColor(cv2.resize(frame, IMG_SZ), cv2.COLOR_BGR2RGB)
-    common.set_input(inter, Image.fromarray(rgb)); inter.invoke()
-    preds = inter.get_tensor(o_det['index'])[0]
-    if o_det['dtype'] == np.int8:
-        preds = (preds.astype(np.float32) - zp) * scale
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    thr = cv2.adaptiveThreshold(gray, 255,
+                                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                cv2.THRESH_BINARY_INV, 21, 15)
+    return thr
 
-    H, W = frame.shape[:2]
-    boxes, scores = [], []
+def ocr_plate(img):
+    """Ejecuta EasyOCR y devuelve el texto con mayor confianza."""
+    result = reader.readtext(img, detail=1,
+                             allowlist=ALLOWLIST, paragraph=False)
+    if not result:
+        return None
+    best = max(result, key=lambda r: r[2])
+    return best[1].replace(' ', '').upper() or None
 
-    # cx, cy, w, h, obj, cls_conf
-    for cx, cy, w, h, obj, cls in preds:
-        conf = obj * cls
-        if conf < CONF_TH: continue
-        boxes.append([cx - w/2, cy - h/2, w, h])   # x, y, w, h  (0-1)
-        scores.append(float(conf))
+def save_json(record):
+    """Agrega un registro (dict) a JSON persistente."""
+    data = []
+    if os.path.isfile(JSON_LOG):
+        try:
+            with open(JSON_LOG) as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            data = []
+    data.append(record)
+    with open(JSON_LOG, 'w') as f:
+        json.dump(data, f, indent=2)
 
-    # ── NMS y dibujado ──
-    if boxes:
-        idxs = cv2.dnn.NMSBoxes(boxes, scores, CONF_TH, NMS_TH)
-        for i in idxs.flatten():
-            x, y, w, h = boxes[i]
-            x0, y0 = int(x * W), int(y * H)
-            x1, y1 = int((x + w) * W), int((y + h) * H)
+# ───────── Abrir stream ───────── #
+cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
+if not cap.isOpened():
+    raise SystemExit('No se pudo abrir el stream RTSP.')
+
+WIN = 'YOLOv5 Coral'
+cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+
+frame_count, start_time = 0, time.time()
+last_seen = deque(maxlen=20)   # [(texto, timestamp)]
+
+try:
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            print('Error al leer frame; reintentando…')
+            time.sleep(1)
+            continue
+
+        frame_count += 1
+        if frame_count % SKIP_EVERY_N_FRAMES:
+            continue
+
+        # ---- Inferencia Edge-TPU ----
+        inp = cv2.resize(frame, (in_w, in_h))
+        common.set_input(interpreter,
+                         Image.fromarray(cv2.cvtColor(inp, cv2.COLOR_BGR2RGB)))
+        interpreter.invoke()
+
+        det = interpreter.get_tensor(out_info['index'])[0].astype(np.int32)
+        det = (det - out_zp) * out_scale  # float32 0-1
+
+        h0, w0 = frame.shape[:2]
+
+        for cx, cy, bw, bh, conf, cls_id in det:
+            if conf < SCORE_TH:
+                continue
+
+            # Convertir centro → esquinas y clamp
+            x0 = int((cx - bw/2) * w0)
+            y0 = int((cy - bh/2) * h0)
+            x1 = int((cx + bw/2) * w0)
+            y1 = int((cy + bh/2) * h0)
+            x0 = max(0, min(x0, w0-1))
+            y0 = max(0, min(y0, h0-1))
+            x1 = max(0, min(x1, w0-1))
+            y1 = max(0, min(y1, h0-1))
+
+            # ---- NUEVO: descartar cajas pequeñas o sin área ----
+            if x1 - x0 < MIN_W or y1 - y0 < MIN_H:
+                continue
+
+            crop = frame[y0:y1, x0:x1].copy()
+            if crop.size == 0:
+                continue
+
+            proc = rectify_and_threshold(crop)
+            text = ocr_plate(proc)
+
+            now_iso = datetime.now().isoformat(timespec='seconds')
+            label = f'{text or "??"} {conf:.2f}'
+
             cv2.rectangle(frame, (x0, y0), (x1, y1), (0,255,0), 2)
-            cv2.putText(frame, f'{scores[i]:.2f}', (x0, y0-6),
-                        cv2.FONT_HERSHEY_SIMPLEX, .5, (0,255,0), 1)
+            cv2.putText(frame, label, (x0, y0 - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
 
-    fps = f_cnt / (time.time() - t0)
-    cv2.putText(frame, f'FPS: {fps:.1f}', (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, .7, (255,255,0), 2)
-    cv2.imshow('YOLOv5 Coral', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'): break
+            # ---- Guardar JSON evitando duplicados ----
+            if text:
+                recent = [t for t, ts in last_seen
+                          if t == text and time.time() - ts < DUPLICATE_SECONDS]
+                if not recent:
+                    record = {'time': now_iso, 'plate': text}
+                    save_json(record)
+                    last_seen.append((text, time.time()))
+                    print('🔸', record)
 
-cap.release(); cv2.destroyAllWindows()
+        # FPS
+        fps = frame_count / (time.time() - start_time)
+        cv2.putText(frame, f'FPS: {fps:.2f}', (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
+
+        cv2.imshow(WIN, frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+finally:
+    cap.release()
+    cv2.destroyAllWindows()
