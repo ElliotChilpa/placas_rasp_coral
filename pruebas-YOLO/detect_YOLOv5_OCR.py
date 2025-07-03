@@ -24,9 +24,10 @@ import easyocr
 RTSP_URL = 'rtsp://admin:Chaparrito10@192.168.0.3:554/h264Preview_01_sub'
 MODEL_PATH = 'best_clean_edgetpu.tflite'
 JSON_LOG = 'placas_detectadas.json'
-SCORE_TH = 0.25
-SKIP_EVERY_N_FRAMES = 3
-ALLOWLIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+SCORE_TH = 0.35
+SKIP_EVERY_N_FRAMES = 10
+# ALLOWLIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+ALLOWLIST            = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 DUPLICATE_SECONDS = 5
 MIN_W, MIN_H = 10, 10          # área mínima del ROI para OCR
 
@@ -42,7 +43,7 @@ out_info = interpreter.get_output_details()[0]
 out_scale, out_zp = out_info['quantization']
 
 # ───────── OCR ───────── #
-reader = easyocr.Reader(['en'], gpu=False)
+reader = easyocr.Reader(['es'], gpu=False)
 
 # ───────── Utilidades ───────── #
 def rectify_and_threshold(crop):
@@ -59,7 +60,7 @@ def rectify_and_threshold(crop):
 
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     thr = cv2.adaptiveThreshold(gray, 255,
-                                cv2.ADAPTIVE_THRESH_MEAN_C,
+                                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                 cv2.THRESH_BINARY_INV, 21, 15)
     return thr
 

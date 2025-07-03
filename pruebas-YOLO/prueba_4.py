@@ -27,8 +27,8 @@ HEADLESS     = False
 # ───────── Umbrales / nombres coherentes ───────── #
 SCORE_TH          = 0.35
 ALLOWLIST         = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-MIN_W, MIN_H      = 8, 8      # ←  **corregido**: ahora existen ambos nombres
-REPEAT_N          = 3
+MIN_W, MIN_H      = 8, 8
+REPEAT_N          = 5
 REPEAT_WINDOW_S   = 8
 JSON_LOG          = 'placas_detectadas.json'
 WIN_NAME          = 'Placas Coral'
@@ -63,18 +63,19 @@ def rectify(bgr):
                                  cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                  cv2.THRESH_BINARY_INV, 21, 15)
 
+# ───────── MODIFICACIÓN CLAVE ───────── #
 def save_json(rec):
-    try:
-        data = json.load(open(JSON_LOG))
-    except Exception:
-        data = []
-    data.append(rec)
-    json.dump(data, open(JSON_LOG, 'w'), indent=2)
+    """
+    Sobrescribe placas_detectadas.json con un solo registro (el más reciente).
+    """
+    with open(JSON_LOG, 'w') as f:
+        json.dump([rec], f, indent=2)
 
 def ocr_worker():
     while True:
         roi = ocr_queue.get()
-        if roi is None: break
+        if roi is None:
+            break
         proc = rectify(roi)
         res = reader.readtext(proc, allowlist=ALLOWLIST,
                               detail=1, paragraph=False)
@@ -90,7 +91,7 @@ def ocr_worker():
                 if len(dq) == REPEAT_N:         # se repitió 3 veces
                     rec = {'time': datetime.now().isoformat(timespec='seconds'),
                            'plate': plate}
-                    save_json(rec)
+                    save_json(rec)              # ← siempre deja un solo registro
                     print('✅ confirmada:', rec)
                     dq.clear()
         ocr_queue.task_done()
@@ -112,7 +113,8 @@ try:
     while True:
         ok, frame = cap.read()
         if not ok:
-            time.sleep(0.3); continue
+            time.sleep(0.3)
+            continue
 
         frame_cnt += 1
         if frame_cnt % SKIP_FRAMES and not show:
